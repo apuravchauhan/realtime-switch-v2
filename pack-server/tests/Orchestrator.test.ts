@@ -1,19 +1,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Orchestrator } from '../src/Orchestrator';
 import { OrchestratorTestCases } from './OrchestratorTestCases';
-import { IServiceFactory } from '../src/core/models/IServiceFactory';
-import { IAccountService } from '../src/core/models/IAccountService';
-import { ISessionService, SessionConfig } from '../src/core/models/ISessionService';
-import { IPersistenceRepo, TokenUsage } from '../src/core/models/IPersistenceRepo';
-import { IVoiceConnection } from '../src/core/models/IVoiceConnection';
-import { IConnectionHandler } from '../src/core/models/IConnectionHandler';
+import { IServiceFactory } from '../src/core/interfaces/IServiceFactory';
+import { IAccountService, AccountDetails } from '../src/core/interfaces/IAccountService';
+import { ISessionService, SessionConfig } from '../src/core/interfaces/ISessionService';
+import { IPersistenceRepo, TokenUsage } from '../src/core/interfaces/IPersistenceRepo';
+import { IVoiceConnection } from '../src/core/interfaces/IVoiceConnection';
+import { IConnectionHandler } from '../src/core/interfaces/IConnectionHandler';
 
 class MockAccountService implements IAccountService {
   credits = 1000;
-  validateAccount(accountId: string, apiKey: string): Promise<boolean> { return Promise.resolve(true); }
+  getAccountDetails(accountId: string, apiKey: string): Promise<AccountDetails> {
+    return Promise.resolve({
+      accountId,
+      email: 'test@example.com',
+      credits: this.credits,
+      tokenRemaining: this.credits,
+      topupRemaining: 0,
+      planName: 'Free Plan',
+      status: true,
+    });
+  }
   getCredits(accountId: string): Promise<number> { return Promise.resolve(this.credits); }
-  deductCredits(accountId: string, amount: number): Promise<void> { return Promise.resolve(); }
-  hasEnoughCredits(accountId: string): Promise<boolean> { return Promise.resolve(this.credits > 0); }
 }
 
 class MockSessionService implements ISessionService {
@@ -123,7 +131,7 @@ describe('Orchestrator', () => {
     for (let i = 0; i < 10000; i++) {
       orchestrator.send({ type: `test${i}` });
     }
-    expect(() => orchestrator.send({ type: 'overflow' })).toThrow('RECON_TIMED_OUT_RETRYING');
+    expect(() => orchestrator.send({ type: 'overflow' })).toThrow('RECONNECTION_TIMED_OUT');
   });
 
   it(OrchestratorTestCases.NEW_SESSION_SAVED, async () => {

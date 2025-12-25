@@ -1,14 +1,14 @@
 import WebSocket from 'ws';
-import { Config, ConfigKeys } from './core/impl/Config';
-import { Handler } from './core/models/Handler';
+import { Config, ConfigKeys } from './core/impls/Config';
+import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
 
 export class OpenAIConnection {
   private ws: WebSocket | null = null;
   private readonly url = 'wss://api.openai.com/v1/realtime?model=gpt-realtime';
-  private handler: Handler | null = null;
+  private handler: IConnectionHandler | null = null;
   private isConnectionEstablished = false;
 
-  public connect(handler: Handler): void {
+  public connect(handler: IConnectionHandler): void {
     this.handler = handler;
 
     const apiKey = Config.getInstance().get(ConfigKeys.OPENAI_API_KEY);
@@ -36,7 +36,7 @@ export class OpenAIConnection {
 
     this.ws.on('message', (data) => {
       const message = JSON.parse(data.toString());
-      this.handler?.onMessage(message);
+      this.handler?.onMsgReceived(message);
     });
   }
 

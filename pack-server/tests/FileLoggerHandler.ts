@@ -1,8 +1,8 @@
-import { Handler } from '../src/core/models/Handler';
+import { IConnectionHandler } from '../src/core/interfaces/IConnectionHandler';
 import fs from 'fs';
 import path from 'path';
 
-export class FileLoggerHandler implements Handler {
+export class FileLoggerHandler implements IConnectionHandler {
   private logFile: string;
   private messages: any[] = [];
 
@@ -36,9 +36,13 @@ export class FileLoggerHandler implements Handler {
     fs.writeFileSync(this.logFile, JSON.stringify(this.messages, null, 2));
   }
 
-  onMessage(message: any): void {
+  onMsgReceived(message: unknown): void {
     console.log('[FileLoggerHandler] Message:', JSON.stringify(message).substring(0, 200));
     this.messages.push(message);
+  }
+
+  onLatencyCheck(latencyMs: number): void {
+    console.log('[FileLoggerHandler] Latency:', latencyMs);
   }
 
   getLogFile(): string {

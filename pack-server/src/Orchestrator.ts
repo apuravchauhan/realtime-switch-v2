@@ -1,9 +1,9 @@
-import { IConnectionHandler } from './core/models/IConnectionHandler';
-import { IVoiceConnection } from './core/models/IVoiceConnection';
-import { IServiceFactory } from './core/models/IServiceFactory';
-import { IAccountService } from './core/models/IAccountService';
-import { ISessionService, SessionConfig } from './core/models/ISessionService';
-import { IPersistenceRepo } from './core/models/IPersistenceRepo';
+import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
+import { IVoiceConnection } from './core/interfaces/IVoiceConnection';
+import { IServiceFactory } from './core/interfaces/IServiceFactory';
+import { IAccountService } from './core/interfaces/IAccountService';
+import { ISessionService, SessionConfig } from './core/interfaces/ISessionService';
+import { IPersistenceRepo } from './core/interfaces/IPersistenceRepo';
 
 const MAX_BUFFER_SIZE = 10000;
 const MAX_RESPONSES_BEFORE_CREDIT_CHECK = 50;
@@ -46,7 +46,7 @@ export class Orchestrator implements IConnectionHandler {
       this.connection?.send(message);
     } else {
       if (this.messageBuffer.length >= MAX_BUFFER_SIZE) {
-        throw new Error('RECON_TIMED_OUT_RETRYING');
+        throw new Error('RECONNECTION_TIMED_OUT');
       }
       this.messageBuffer.push(message);
     }
