@@ -3,14 +3,16 @@ import { IAccountRepo } from '../interfaces/IAccountRepo';
 import { Config } from './Config';
 import { DatabaseConnection } from './DatabaseConnection';
 import { SQLiteAccountRepo } from './SQLiteAccountRepo';
+import { Migrator } from './migrations/Migrator';
 
 export class ServiceFactory implements IServiceFactory {
   private static instance: ServiceFactory | null = null;
   private config: Config | null = null;
   private dbConnection: DatabaseConnection | null = null;
   private accountRepo: SQLiteAccountRepo | null = null;
+  private migrator: Migrator | null = null;
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): ServiceFactory {
     if (!ServiceFactory.instance) ServiceFactory.instance = new ServiceFactory();
@@ -30,6 +32,11 @@ export class ServiceFactory implements IServiceFactory {
   getDatabaseConnection(): DatabaseConnection {
     if (!this.dbConnection) this.dbConnection = new DatabaseConnection(this.getConfig());
     return this.dbConnection;
+  }
+
+  getMigrator(): Migrator {
+    if (!this.migrator) this.migrator = new Migrator(this.getDatabaseConnection().getDb());
+    return this.migrator;
   }
 
   getAccountRepo(): IAccountRepo {

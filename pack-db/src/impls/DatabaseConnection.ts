@@ -1,5 +1,5 @@
 import { Kysely, SqliteDialect } from 'kysely';
-import SQLite from 'better-sqlite3';
+import SQLite from 'better-sqlite3-multiple-ciphers';
 import { Database } from '../interfaces/entities/Account';
 import { Config, ConfigKeys } from './Config';
 
@@ -8,25 +8,16 @@ export class DatabaseConnection {
 
   constructor(config: Config) {
     const dbPath = config.get(ConfigKeys.DB_PATH);
-    this.db = new Kysely<Database>({ dialect: new SqliteDialect({ database: new SQLite(dbPath) }) });
+    const encryptionKey = config.get(ConfigKeys.DB_ENCRYPTION_KEY);
+    const sqlite = new SQLite(dbPath);
+    sqlite.pragma(`cipher='sqlcipher'`);
+    sqlite.pragma(`legacy=4`);
+    sqlite.pragma(`key='${encryptionKey}'`);
+    this.db = new Kysely<Database>({ dialect: new SqliteDialect({ database: sqlite }) });
   }
 
   getDb(): Kysely<Database> {
     return this.db;
-  }
-
-  async runMigrations(): Promise<void> {
-    await this.db.schema.createTable('accounts').ifNotExists()
-      .addColumn('id', 'text', (col) => col.primaryKey())
-      .addColumn('email', 'text', (col) => col.notNull().unique())
-      .addColumn('api_key', 'text', (col) => col.notNull())
-      .addColumn('plan_name', 'text', (col) => col.notNull().defaultTo('Free'))
-      .addColumn('token_remaining', 'integer', (col) => col.notNull().defaultTo(1000))
-      .addColumn('topup_remaining', 'integer', (col) => col.notNull().defaultTo(0))
-      .addColumn('status', 'integer', (col) => col.notNull().defaultTo(1))
-      .addColumn('created_at', 'integer', (col) => col.notNull())
-      .addColumn('updated_at', 'integer', (col) => col.notNull())
-      .execute();
   }
 
   destroy(): Promise<void> {

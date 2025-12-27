@@ -3,6 +3,7 @@ import path from 'path';
 
 export enum ConfigKeys {
   DB_PATH = 'DB_PATH',
+  DB_ENCRYPTION_KEY = 'DB_ENCRYPTION_KEY',
 }
 
 export class Config {
