@@ -44,6 +44,7 @@ export class OpenAIConnection implements IVoiceConnection {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
+    this.handler = null;
   }
 
   public isConnected(): boolean {

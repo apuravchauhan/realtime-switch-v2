@@ -5,6 +5,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "start": "cd .. && npx tsx pack-db/src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist"

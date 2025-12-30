@@ -19,7 +19,6 @@ export async function up(db: Kysely<any>): Promise<MigrationStatus> {
       input_tokens INTEGER DEFAULT 0,
       output_tokens INTEGER DEFAULT 0,
       total_tokens INTEGER DEFAULT 0,
-      audio_duration_ms INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     )
   `.execute(db);

@@ -6,6 +6,7 @@ import { IServiceFactory } from './core/interfaces/IServiceFactory';
 
 const MAX_BUFFER_SIZE = 10000;
 const MAX_RESPONSES_BEFORE_CREDIT_CHECK = 50;
+const USAGE_BATCH_SIZE = 5;
 
 export class Orchestrator implements IConnectionHandler {
   private accountId: string;
@@ -20,6 +21,8 @@ export class Orchestrator implements IConnectionHandler {
   private messageBuffer: unknown[] = [];
   private responseCount = 0;
   private creditsCheckInProgress = false;
+  private usageBuffer = { inputTokens: 0, outputTokens: 0 };
+  private usageResponseCount = 0;
 
   constructor(
     accountId: string,
@@ -127,8 +130,15 @@ export class Orchestrator implements IConnectionHandler {
     this.credits -= totalTokens;
     this.responseCount++;
 
-    // Persist usage (fire and forget)
-    this.accountService.updateUsage(this.accountId, this.sessionId, 'OPENAI', inputTokens, outputTokens);
+    // Buffer usage for batched updates
+    this.usageBuffer.inputTokens += inputTokens;
+    this.usageBuffer.outputTokens += outputTokens;
+    this.usageResponseCount++;
+
+    // Flush when batch size reached
+    if (this.usageResponseCount >= USAGE_BATCH_SIZE) {
+      this.flushUsageBuffer();
+    }
 
     // Check if credits depleted
     if (this.credits <= 0) {
@@ -137,11 +147,31 @@ export class Orchestrator implements IConnectionHandler {
     }
   }
 
+  private flushUsageBuffer(): void {
+    if (this.usageResponseCount === 0) return; // Nothing to flush
+
+    // Send batched usage
+    this.accountService.updateUsage(
+      this.accountId,
+      this.sessionId,
+      'OPENAI',
+      this.usageBuffer.inputTokens,
+      this.usageBuffer.outputTokens
+    );
+
+    // Reset buffer
+    this.usageBuffer = { inputTokens: 0, outputTokens: 0 };
+    this.usageResponseCount = 0;
+  }
+
   onLatencyCheck(latencyMs: number): void {
     // TODO: implement latency tracking
   }
 
   cleanup(): void {
+    // Flush any pending usage before cleanup
+    this.flushUsageBuffer();
+
     if (this.voiceConnection?.isConnected()) {
       this.voiceConnection.disconnect();
     }

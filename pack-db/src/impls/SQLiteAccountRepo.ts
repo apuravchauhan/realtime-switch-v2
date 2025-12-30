@@ -144,10 +144,67 @@ export class SQLiteAccountRepo implements IAccountRepo {
   ): Promise<void> {
     const now = new Date().toISOString();
     const totalTokens = inputTokens + outputTokens;
-    await sql`
-      INSERT INTO usage_metrics (account_id, session_id, provider, input_tokens, output_tokens, total_tokens, created_at)
-      VALUES (${accountId}, ${sessionId}, ${provider}, ${inputTokens}, ${outputTokens}, ${totalTokens}, ${now})
-    `.execute(this.db);
+
+    // Use transaction to atomically insert usage and update credits
+    await this.db.transaction().execute(async (trx) => {
+      // Get current balances
+      const account = await trx
+        .selectFrom('accounts')
+        .select(['topup_remaining', 'token_remaining'])
+        .where('id', '=', accountId)
+        .executeTakeFirst();
+
+      if (!account) {
+        throw new Error(`Account ${accountId} not found`);
+      }
+
+      let topupRemaining = account.topup_remaining;
+      let tokenRemaining = account.token_remaining;
+
+      // Cascading deduction: topup first, then subscription
+      let remainingUsage = totalTokens;
+
+      // Step 1: Deduct from topup (stops at 0)
+      if (topupRemaining > 0) {
+        if (topupRemaining >= remainingUsage) {
+          topupRemaining -= remainingUsage;
+          remainingUsage = 0;
+        } else {
+          remainingUsage -= topupRemaining;
+          topupRemaining = 0;
+        }
+      }
+
+      // Step 2: Deduct remainder from subscription (can go negative)
+      if (remainingUsage > 0) {
+        tokenRemaining -= remainingUsage;
+      }
+
+      // Insert usage record
+      await trx
+        .insertInto('usage_metrics')
+        .values({
+          account_id: accountId,
+          session_id: sessionId,
+          provider,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: totalTokens,
+          created_at: now,
+        })
+        .execute();
+
+      // Update account credits
+      await trx
+        .updateTable('accounts')
+        .set({
+          topup_remaining: topupRemaining,
+          token_remaining: tokenRemaining,
+          updated_at: now,
+        })
+        .where('id', '=', accountId)
+        .execute();
+    });
   }
 
   private generateKey(): string {

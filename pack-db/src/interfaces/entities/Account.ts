@@ -1,4 +1,6 @@
 import { ApiKey } from './ApiKey';
+import { Session } from './Session';
+import { UsageMetric } from './UsageMetric';
 
 export interface Account {
   id: string;
@@ -14,6 +16,8 @@ export interface Account {
 export interface Database {
   accounts: Account;
   api_keys: ApiKey;
+  sessions: Session;
+  usage_metrics: UsageMetric;
 }
 
 export interface CreateAccountInput {

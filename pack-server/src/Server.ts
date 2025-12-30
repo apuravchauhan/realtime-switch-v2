@@ -2,6 +2,10 @@ import * as uWS from 'uWebSockets.js';
 import { SessionData } from 'pack-shared';
 import { ServiceFactory } from './core/impls/ServiceFactory';
 import { Orchestrator } from './Orchestrator';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const CLASS_NAME = 'Server';
 
