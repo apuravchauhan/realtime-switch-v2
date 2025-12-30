@@ -1,9 +1,8 @@
+import * as uWS from 'uWebSockets.js';
+import { IAccountService } from 'pack-shared';
 import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
 import { IVoiceConnection } from './core/interfaces/IVoiceConnection';
 import { IServiceFactory } from './core/interfaces/IServiceFactory';
-import { IAccountService } from './core/interfaces/IAccountService';
-import { ISessionService, SessionConfig } from './core/interfaces/ISessionService';
-import { IPersistenceRepo } from './core/interfaces/IPersistenceRepo';
 
 const MAX_BUFFER_SIZE = 10000;
 const MAX_RESPONSES_BEFORE_CREDIT_CHECK = 50;
@@ -11,118 +10,167 @@ const MAX_RESPONSES_BEFORE_CREDIT_CHECK = 50;
 export class Orchestrator implements IConnectionHandler {
   private accountId: string;
   private sessionId: string;
-  private connection: IVoiceConnection | null = null;
+  private sessionData: string;
+  private credits: number;
+  private ws: uWS.WebSocket<unknown>;
+  private factory: IServiceFactory;
+  private accountService: IAccountService;
+  private voiceConnection: IVoiceConnection | null = null;
   private isVoiceProviderConnected = false;
   private messageBuffer: unknown[] = [];
-  private availableCredits: number | null = null;
   private responseCount = 0;
   private creditsCheckInProgress = false;
-  private readonly factory: IServiceFactory;
-  private readonly accountService: IAccountService;
-  private readonly sessionService: ISessionService;
-  private readonly persistence: IPersistenceRepo;
 
-  constructor(accountId: string, sessionId: string, factory: IServiceFactory) {
+  constructor(
+    accountId: string,
+    sessionId: string,
+    sessionData: string,
+    credits: number,
+    ws: uWS.WebSocket<unknown>,
+    factory: IServiceFactory
+  ) {
     this.accountId = accountId;
     this.sessionId = sessionId;
+    this.sessionData = sessionData;
+    this.credits = credits;
+    this.ws = ws;
     this.factory = factory;
     this.accountService = factory.getAccountService();
-    this.sessionService = factory.getSessionService();
-    this.persistence = factory.getPersistence();
   }
 
   connect(): void {
-    this.connection = this.factory.getNewOAIVoiceConnection();
-    this.connection.connect(this);
+    this.voiceConnection = this.factory.getNewVoiceConnection();
+    this.voiceConnection.connect(this);
   }
 
+  // Called when client sends a message - pipe to voice provider
   send(message: unknown): void {
-    if (this.isVoiceProviderConnected) {
+    if (this.isVoiceProviderConnected && this.voiceConnection) {
+      // Check credits before sending
       this.checkAndScheduleCreditsCheck();
-      if (this.availableCredits !== null && this.availableCredits <= 0) {
-        this.connection?.disconnect();
+      if (this.credits <= 0) {
+        this.voiceConnection.disconnect();
         throw new Error('NO_CREDITS');
       }
-      this.connection?.send(message);
+      this.voiceConnection.send(message);
     } else {
       if (this.messageBuffer.length >= MAX_BUFFER_SIZE) {
-        throw new Error('RECONNECTION_TIMED_OUT');
+        throw new Error('BUFFER_OVERFLOW');
       }
       this.messageBuffer.push(message);
     }
   }
 
+  // IConnectionHandler - voice provider connected
   onConnect(): void {
-    this.checkAndScheduleCreditsCheck();
-    this.sessionService.getSessionData(this.accountId, this.sessionId).then((sessionConfig) => {
-      if (sessionConfig) {
-        this.replaySession(sessionConfig);
+    this.isVoiceProviderConnected = true;
+
+    // Send session config if available
+    if (this.sessionData) {
+      try {
+        this.voiceConnection!.send(this.sessionData);
+      } catch (e) {
+        console.error('[Orchestrator] Failed to parse sessionData:', e);
       }
-      this.isVoiceProviderConnected = true;
-      this.flushBuffer();
-    });
+    }
+
+    this.flushBuffer();
   }
 
+  // IConnectionHandler - voice provider error
   onError(error: Error): void {
+    console.error(`[Orchestrator] Voice connection error for ${this.accountId}:`, error);
     this.isVoiceProviderConnected = false;
   }
 
+  // IConnectionHandler - voice provider closed
   onClose(code: number, reason: string): void {
+    console.log(`[Orchestrator] Voice connection closed for ${this.accountId}: ${code} ${reason}`);
     this.isVoiceProviderConnected = false;
   }
 
-  onMsgReceived(message: unknown): void {
-    const payload = message as { type?: string; response?: { usage?: OAIUsage } };
-    if (payload.type === 'response.done' && payload.response?.usage) {
-      const usage = payload.response.usage;
-      if (this.availableCredits !== null) {
-        this.availableCredits -= usage.total_tokens;
-      }
-      this.responseCount++;
-      this.persistence.saveUsage(this.accountId, this.sessionId, 'OPENAI', {
-        inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens
-      });
-      if (this.availableCredits !== null && this.availableCredits <= 0) {
-        this.connection?.disconnect();
-        throw new Error('NO_CREDITS');
-      }
+  // IConnectionHandler - message from voice provider -> pipe to client
+  onMsgReceived(message: string): void {
+    // Pipe to client WebSocket
+    this.ws.send(message);
+
+    // Track usage if response.done
+    this.trackUsage(message);
+  }
+
+  private trackUsage(message: string): void {
+    // startsWith is O(prefix length), not O(n) - fast early exit for most messages
+    if (!message.startsWith('{"type":"response.done"')) return;
+
+    // Extract input_tokens
+    const inputIdx = message.indexOf('"input_tokens":');
+    if (inputIdx === -1) return;
+
+    let inputStart = inputIdx + 15; // length of '"input_tokens":'
+    let inputEnd = inputStart;
+    while (message.charCodeAt(inputEnd) >= 48 && message.charCodeAt(inputEnd) <= 57) inputEnd++;
+    if (inputEnd === inputStart) return;
+    const inputTokens = parseInt(message.slice(inputStart, inputEnd), 10);
+
+    // Extract output_tokens - search from inputEnd for efficiency
+    const outputIdx = message.indexOf('"output_tokens":', inputEnd);
+    if (outputIdx === -1) return;
+
+    let outputStart = outputIdx + 16; // length of '"output_tokens":'
+    let outputEnd = outputStart;
+    while (message.charCodeAt(outputEnd) >= 48 && message.charCodeAt(outputEnd) <= 57) outputEnd++;
+    if (outputEnd === outputStart) return;
+    const outputTokens = parseInt(message.slice(outputStart, outputEnd), 10);
+
+    // Update credits and response count
+    const totalTokens = inputTokens + outputTokens;
+    this.credits -= totalTokens;
+    this.responseCount++;
+
+    // Persist usage (fire and forget)
+    this.accountService.updateUsage(this.accountId, this.sessionId, 'OPENAI', inputTokens, outputTokens);
+
+    // Check if credits depleted
+    if (this.credits <= 0) {
+      this.voiceConnection?.disconnect();
+      throw new Error('NO_CREDITS');
     }
   }
 
   onLatencyCheck(latencyMs: number): void {
-    throw new Error('Not implemented');
+    // TODO: implement latency tracking
   }
 
-  reconnect(): void {
-    throw new Error('Not implemented');
+  cleanup(): void {
+    if (this.voiceConnection?.isConnected()) {
+      this.voiceConnection.disconnect();
+    }
+    this.messageBuffer = [];
+    console.log(`[Orchestrator] Cleanup completed for ${this.accountId}:${this.sessionId}`);
   }
 
   private flushBuffer(): void {
     while (this.messageBuffer.length > 0) {
       const message = this.messageBuffer.shift();
-      this.connection?.send(message);
+      this.voiceConnection!.send(message);
     }
   }
 
-  private replaySession(config: SessionConfig): void {
-    const sessionMessage = { type: 'session.update', session: config };
-    this.connection?.send(sessionMessage);
-  }
-
   private checkAndScheduleCreditsCheck(): void {
+    // Skip if check already in progress
     if (this.creditsCheckInProgress) return;
-    if (this.availableCredits !== null && this.responseCount < MAX_RESPONSES_BEFORE_CREDIT_CHECK) return;
+
+    // Skip if not yet time for periodic check
+    if (this.responseCount < MAX_RESPONSES_BEFORE_CREDIT_CHECK) return;
+
     this.creditsCheckInProgress = true;
     this.accountService.getCredits(this.accountId).then((credits) => {
-      this.availableCredits = credits;
+      this.credits = credits;
       this.responseCount = 0;
+      this.creditsCheckInProgress = false;
+    }).catch((err) => {
+      console.error('[Orchestrator] Failed to fetch credits:', err);
       this.creditsCheckInProgress = false;
     });
   }
-}
-
-interface OAIUsage {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
 }

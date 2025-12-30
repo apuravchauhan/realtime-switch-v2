@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { OpenAIConnection } from '../src/OpenAIConnection';
 import { FileLoggerHandler } from './FileLoggerHandler';
 import { convertWavToPcm } from './utils/audio';
 import { OpenAITestCases } from './OpenAITestCases';
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
+
+// Load test environment
+dotenv.config({ path: path.resolve(__dirname, '../../.env.test') });
 
 describe('OpenAI Full Response Turn', () => {
   it('should connect to OpenAI API', async () => {

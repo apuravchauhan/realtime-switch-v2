@@ -4,6 +4,7 @@ import path from 'path';
 export enum ConfigKeys {
   OPENAI_API_KEY = 'OPENAI_API_KEY',
   GEMINI_API_KEY = 'GEMINI_API_KEY',
+  ZMQ_SOCKET_PATH = 'ZMQ_SOCKET_PATH',
 }
 
 export class Config {
@@ -11,7 +12,9 @@ export class Config {
   private config: Map<ConfigKeys, string>;
 
   private constructor() {
-    const envPath = path.resolve(__dirname, '../../../../.env');
+    const isTest = process.env.NODE_ENV === 'test';
+    const envFile = isTest ? '.env.test' : '.env';
+    const envPath = path.resolve(__dirname, '../../../../../', envFile);
     dotenv.config({ path: envPath });
 
     this.config = new Map();
@@ -22,6 +25,10 @@ export class Config {
         this.config.set(key as ConfigKeys, value);
       }
     }
+  }
+
+  public static reset(): void {
+    Config.instance = null as any;
   }
 
   public static getInstance(): Config {

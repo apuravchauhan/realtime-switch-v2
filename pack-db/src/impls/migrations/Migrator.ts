@@ -67,7 +67,7 @@ export class Migrator {
   private getMigrationFiles(): string[] {
     if (!fs.existsSync(this.migrationsPath)) return [];
     return fs.readdirSync(this.migrationsPath)
-      .filter((f) => /^\d{4}-\d{2}-\d{2}T\d{3}-.+\.(ts|js)$/.test(f))
+      .filter((f) => /^\d{4}-\d{2}-\d{2}T\d{3}-.+\.(ts|js)$/.test(f) && !f.endsWith('.d.ts'))
       .sort();
   }
 }

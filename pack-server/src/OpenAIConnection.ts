@@ -1,8 +1,9 @@
 import WebSocket from 'ws';
 import { Config, ConfigKeys } from './core/impls/Config';
 import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
+import { IVoiceConnection } from './core/interfaces/IVoiceConnection';
 
-export class OpenAIConnection {
+export class OpenAIConnection implements IVoiceConnection {
   private ws: WebSocket | null = null;
   private readonly url = 'wss://api.openai.com/v1/realtime?model=gpt-realtime';
   private handler: IConnectionHandler | null = null;
@@ -35,8 +36,7 @@ export class OpenAIConnection {
     });
 
     this.ws.on('message', (data) => {
-      const message = JSON.parse(data.toString());
-      this.handler?.onMsgReceived(message);
+      this.handler?.onMsgReceived(data.toString());
     });
   }
 
@@ -50,9 +50,10 @@ export class OpenAIConnection {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
-  public send(message: any): void {
+  public send(message: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+      const data = typeof message === 'string' ? message : JSON.stringify(message);
+      this.ws.send(data);
     }
   }
 }

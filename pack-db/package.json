@@ -14,7 +14,9 @@
     "better-sqlite3-multiple-ciphers": "^12.5.0",
     "dotenv": "^17.2.3",
     "kysely": "^0.27.5",
-    "uuid": "^11.1.0"
+    "pack-shared": "*",
+    "uuid": "^11.1.0",
+    "zeromq": "^6.0.0-beta.20"
   },
   "devDependencies": {
     "@types/uuid": "^10.0.0",

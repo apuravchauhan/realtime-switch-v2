@@ -1,20 +1,27 @@
 {
   "name": "@rs/server",
   "version": "1.0.0",
-  "main": "dist/index.js",
+  "main": "dist/Server.js",
   "scripts": {
+    "start": "node dist/Server.js",
+    "dev": "tsx src/Server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@rs/core": "^1.0.0",
     "dotenv": "^17.2.3",
-    "ws": "^8.18.3"
+    "pack-shared": "*",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0",
+    "ws": "^8.18.0",
+    "zeromq": "^6.0.0-beta.20"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1",
+    "@rs/db": "*",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
 }

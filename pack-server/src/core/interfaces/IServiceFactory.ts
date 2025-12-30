@@ -1,11 +1,18 @@
-import { IAccountService } from './IAccountService';
-import { ISessionService } from './ISessionService';
-import { IPersistenceRepo } from './IPersistenceRepo';
+import * as uWS from 'uWebSockets.js';
+import { IAccountService } from 'pack-shared';
 import { IVoiceConnection } from './IVoiceConnection';
+import { ZmqService } from '../impls/ZmqService';
+import { Orchestrator } from '../../Orchestrator';
 
 export interface IServiceFactory {
+  getZmqService(): ZmqService;
   getAccountService(): IAccountService;
-  getSessionService(): ISessionService;
-  getPersistence(): IPersistenceRepo;
-  getNewOAIVoiceConnection(): IVoiceConnection;
+  getNewVoiceConnection(): IVoiceConnection;
+  getNewOrchestrator(
+    accountId: string,
+    sessionId: string,
+    sessionData: string,
+    credits: number,
+    ws: uWS.WebSocket<unknown>
+  ): Orchestrator;
 }

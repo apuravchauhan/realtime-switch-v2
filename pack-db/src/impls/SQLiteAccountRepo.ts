@@ -7,6 +7,15 @@ import { ApiKey, CreateApiKeyInput, CreateApiKeyResult } from '../interfaces/ent
 
 const PLAN_DEFAULTS: Record<string, number> = { Free: 1000, Pro: 50000, Enterprise: 500000 };
 
+// Row returned from loadSessionByKeyAndId JOIN query
+export interface SessionRow {
+  account_id: string;
+  type: string;  // 'SESSION' or 'CONV'
+  data: string;  // JSON blob
+  token_remaining: number;
+  topup_remaining: number;
+}
+
 export class SQLiteAccountRepo implements IAccountRepo {
   constructor(private db: Kysely<Database>) {}
 
@@ -74,6 +83,71 @@ export class SQLiteAccountRepo implements IAccountRepo {
   async updateLastUsed(keyHash: string): Promise<void> {
     await this.db.updateTable('api_keys').set({ last_used_at: new Date().toISOString() })
       .where('key_hash', '=', keyHash).execute();
+  }
+
+  async getCredits(accountId: string): Promise<{ tokenRemaining: number; topupRemaining: number } | null> {
+    const result = await this.db
+      .selectFrom('accounts')
+      .select(['token_remaining', 'topup_remaining'])
+      .where('id', '=', accountId)
+      .executeTakeFirst();
+
+    if (!result) return null;
+    return {
+      tokenRemaining: result.token_remaining,
+      topupRemaining: result.topup_remaining,
+    };
+  }
+
+  // Raw DB query: returns 0-2 rows based on key validity and session existence
+  // 0 rows = invalid key or expired
+  // 1 row = valid key, session exists (SESSION type only)
+  // 2 rows = valid key, session + conversation exist (SESSION + CONV types)
+  async loadSessionByKeyAndId(apiKey: string, sessionId: string): Promise<SessionRow[]> {
+    const keyHash = this.hashKey(apiKey);
+    const now = new Date().toISOString();
+
+    // Join api_keys with sessions to validate key and get session data in one query
+    const rows = await sql<SessionRow>`
+      SELECT
+        a.account_id,
+        s.type,
+        s.data,
+        acc.token_remaining,
+        acc.topup_remaining
+      FROM api_keys a
+      JOIN sessions s ON s.account_id = a.account_id AND s.session_id = ${sessionId}
+      JOIN accounts acc ON acc.id = a.account_id
+      WHERE a.key_hash = ${keyHash}
+        AND (a.expires_at IS NULL OR a.expires_at > ${now})
+    `.execute(this.db);
+
+    return rows.rows;
+  }
+
+  async overwriteConversation(accountId: string, sessionId: string, content: string): Promise<void> {
+    await sql`
+      UPDATE sessions
+      SET data = ${content}
+      WHERE account_id = ${accountId}
+        AND session_id = ${sessionId}
+        AND type = 'CONV'
+    `.execute(this.db);
+  }
+
+  async insertUsage(
+    accountId: string,
+    sessionId: string,
+    provider: string,
+    inputTokens: number,
+    outputTokens: number
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const totalTokens = inputTokens + outputTokens;
+    await sql`
+      INSERT INTO usage_metrics (account_id, session_id, provider, input_tokens, output_tokens, total_tokens, created_at)
+      VALUES (${accountId}, ${sessionId}, ${provider}, ${inputTokens}, ${outputTokens}, ${totalTokens}, ${now})
+    `.execute(this.db);
   }
 
   private generateKey(): string {
