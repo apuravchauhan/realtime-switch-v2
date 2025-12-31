@@ -25,4 +25,14 @@ export class AccountServiceZmq implements IAccountService {
     const response = await this.zmqService.send(id, ZmqMessageType.GET_CREDITS, accountId);
     return response.credits;
   }
+
+  saveSession(accountId: string, sessionId: string, sessionData: string): void {
+    const id = randomUUID();
+    this.zmqService.sendFireAndForget(id, ZmqMessageType.SAVE_SESSION, accountId, sessionId, sessionData);
+  }
+
+  appendConversation(accountId: string, sessionId: string, conversationData: string): void {
+    const id = randomUUID();
+    this.zmqService.sendFireAndForget(id, ZmqMessageType.APPEND_CONVERSATION, accountId, sessionId, conversationData);
+  }
 }

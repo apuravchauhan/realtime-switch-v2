@@ -85,6 +85,24 @@ export class ZmqHandler {
         this.accountService.updateUsage(accountId, sessionId, provider, inputTokens, outputTokens);
         break;
       }
+      case ZmqMessageType.SAVE_SESSION: {
+        const { accountId, sessionId, sessionData } = args as {
+          accountId: string;
+          sessionId: string;
+          sessionData: string;
+        };
+        this.accountService.saveSession(accountId, sessionId, sessionData);
+        break;
+      }
+      case ZmqMessageType.APPEND_CONVERSATION: {
+        const { accountId, sessionId, conversationData } = args as {
+          accountId: string;
+          sessionId: string;
+          conversationData: string;
+        };
+        this.accountService.appendConversation(accountId, sessionId, conversationData);
+        break;
+      }
       default:
         console.error('[ZmqHandler] Unknown fire-and-forget type:', type);
     }

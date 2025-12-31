@@ -3,6 +3,7 @@ import { IAccountService } from 'pack-shared';
 import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
 import { IVoiceConnection } from './core/interfaces/IVoiceConnection';
 import { IServiceFactory } from './core/interfaces/IServiceFactory';
+import { ICheckpointHandler } from './core/interfaces/ICheckpointHandler';
 
 const MAX_BUFFER_SIZE = 10000;
 const MAX_RESPONSES_BEFORE_CREDIT_CHECK = 50;
@@ -23,6 +24,8 @@ export class Orchestrator implements IConnectionHandler {
   private creditsCheckInProgress = false;
   private usageBuffer = { inputTokens: 0, outputTokens: 0 };
   private usageResponseCount = 0;
+  private skipSessionSave = false;
+  private checkpointHandler: ICheckpointHandler;
 
   constructor(
     accountId: string,
@@ -39,9 +42,14 @@ export class Orchestrator implements IConnectionHandler {
     this.ws = ws;
     this.factory = factory;
     this.accountService = factory.getAccountService();
+    this.skipSessionSave = sessionData.length > 0;
+    this.checkpointHandler = factory.getNewCheckpointHandler(accountId, sessionId);
   }
 
   connect(): void {
+    if (this.voiceConnection) {
+      this.voiceConnection.disconnect();
+    }
     this.voiceConnection = this.factory.getNewVoiceConnection();
     this.voiceConnection.connect(this);
   }
@@ -71,6 +79,14 @@ export class Orchestrator implements IConnectionHandler {
     // Send session config if available
     if (this.sessionData) {
       try {
+        const sessionEvent = JSON.parse(this.sessionData);
+        const instructions = sessionEvent.session?.instructions || '';
+        const instructionsPreview = instructions.length > 200
+          ? instructions.substring(0, 200) + '...'
+          : instructions;
+        console.log(`[Orchestrator] Sending session.update for ${this.accountId}:${this.sessionId}`);
+        console.log(`[Orchestrator] Instructions (${instructions.length} chars): ${instructionsPreview}`);
+
         this.voiceConnection!.send(this.sessionData);
       } catch (e) {
         console.error('[Orchestrator] Failed to parse sessionData:', e);
@@ -84,12 +100,17 @@ export class Orchestrator implements IConnectionHandler {
   onError(error: Error): void {
     console.error(`[Orchestrator] Voice connection error for ${this.accountId}:`, error);
     this.isVoiceProviderConnected = false;
+    this.skipSessionSave = false;
   }
 
   // IConnectionHandler - voice provider closed
   onClose(code: number, reason: string): void {
     console.log(`[Orchestrator] Voice connection closed for ${this.accountId}: ${code} ${reason}`);
     this.isVoiceProviderConnected = false;
+
+    console.log(`[Orchestrator] Auto-reconnecting for ${this.accountId}:${this.sessionId}`);
+    this.skipSessionSave = true;
+    this.connect();
   }
 
   // IConnectionHandler - message from voice provider -> pipe to client
@@ -99,6 +120,20 @@ export class Orchestrator implements IConnectionHandler {
 
     // Track usage if response.done
     this.trackUsage(message);
+    this.saveSessionIfNeeded(message);
+    this.checkpointHandler.trackConversation(message);
+  }
+
+  private saveSessionIfNeeded(message: string): void {
+    if (!message.startsWith('{"type":"session.updated"')) return;
+
+    if (this.skipSessionSave) {
+      this.skipSessionSave = false;
+      return;
+    }
+
+    // Send raw session.updated event to DB service for processing
+    this.accountService.saveSession(this.accountId, this.sessionId, message);
   }
 
   private trackUsage(message: string): void {
@@ -171,6 +206,7 @@ export class Orchestrator implements IConnectionHandler {
   cleanup(): void {
     // Flush any pending usage before cleanup
     this.flushUsageBuffer();
+    this.checkpointHandler.flush();
 
     if (this.voiceConnection?.isConnected()) {
       this.voiceConnection.disconnect();

@@ -2,8 +2,10 @@ import * as uWS from 'uWebSockets.js';
 import { IAccountService } from 'pack-shared';
 import { IServiceFactory } from '../interfaces/IServiceFactory';
 import { IVoiceConnection } from '../interfaces/IVoiceConnection';
+import { ICheckpointHandler } from '../interfaces/ICheckpointHandler';
 import { ZmqService } from './ZmqService';
 import { AccountServiceZmq } from './AccountServiceZmq';
+import { CheckpointHandler } from './CheckpointHandler';
 import { OpenAIConnection } from '../../OpenAIConnection';
 import { Orchestrator } from '../../Orchestrator';
 import { Config, ConfigKeys } from './Config';
@@ -51,6 +53,10 @@ export class ServiceFactory implements IServiceFactory {
 
   getNewVoiceConnection(): IVoiceConnection {
     return new OpenAIConnection();
+  }
+
+  getNewCheckpointHandler(accountId: string, sessionId: string): ICheckpointHandler {
+    return new CheckpointHandler(accountId, sessionId, this.getAccountService());
   }
 
   getNewOrchestrator(

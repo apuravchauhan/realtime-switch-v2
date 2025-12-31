@@ -101,13 +101,12 @@ export class SQLiteAccountRepo implements IAccountRepo {
 
   // Raw DB query: returns 0-2 rows based on key validity and session existence
   // 0 rows = invalid key or expired
-  // 1 row = valid key, session exists (SESSION type only)
+  // 1 row = valid key, no session (new session) OR session exists (SESSION type only)
   // 2 rows = valid key, session + conversation exist (SESSION + CONV types)
   async loadSessionByKeyAndId(apiKey: string, sessionId: string): Promise<SessionRow[]> {
     const keyHash = this.hashKey(apiKey);
     const now = new Date().toISOString();
 
-    // Join api_keys with sessions to validate key and get session data in one query
     const rows = await sql<SessionRow>`
       SELECT
         a.account_id,
@@ -116,8 +115,8 @@ export class SQLiteAccountRepo implements IAccountRepo {
         acc.token_remaining,
         acc.topup_remaining
       FROM api_keys a
-      JOIN sessions s ON s.account_id = a.account_id AND s.session_id = ${sessionId}
       JOIN accounts acc ON acc.id = a.account_id
+      LEFT JOIN sessions s ON s.account_id = a.account_id AND s.session_id = ${sessionId}
       WHERE a.key_hash = ${keyHash}
         AND (a.expires_at IS NULL OR a.expires_at > ${now})
     `.execute(this.db);
@@ -132,6 +131,28 @@ export class SQLiteAccountRepo implements IAccountRepo {
       WHERE account_id = ${accountId}
         AND session_id = ${sessionId}
         AND type = 'CONV'
+    `.execute(this.db);
+  }
+
+  async upsertSession(accountId: string, sessionId: string, sessionData: string): Promise<void> {
+    const now = new Date().toISOString();
+    await sql`
+      INSERT INTO sessions (account_id, session_id, type, data, created_at)
+      VALUES (${accountId}, ${sessionId}, 'SESSION', ${sessionData}, ${now})
+      ON CONFLICT(account_id, session_id, type)
+      DO UPDATE SET data = ${sessionData}
+    `.execute(this.db);
+  }
+
+  async appendConversation(accountId: string, sessionId: string, conversationData: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    // Insert or append using ON CONFLICT
+    await sql`
+      INSERT INTO sessions (account_id, session_id, type, data, created_at)
+      VALUES (${accountId}, ${sessionId}, 'CONV', ${conversationData}, ${now})
+      ON CONFLICT(account_id, session_id, type)
+      DO UPDATE SET data = data || ${conversationData}
     `.execute(this.db);
   }
 

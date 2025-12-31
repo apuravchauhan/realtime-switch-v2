@@ -41,10 +41,26 @@ export class AccountServiceImpl implements IAccountService {
       }
 
       if (!sessionData) {
-        return { error: '', accountId, sessionData: '', credits: totalCredits };
-      }
+        // If conversation exists, create synthetic session with conversation injected
+        if (conversation.length > 0) {
+          console.log(`[AccountServiceImpl] No session found but conversation exists (${conversation.length} chars), creating synthetic session`);
 
-      if (conversation.length > 0) {
+          let contextToInject = conversation;
+          if (conversation.length > SUMMARY_DEFAULTS.THRESHOLD_CHARS) {
+            // Fire and forget - trigger summarization in background
+            this.triggerSummarization(accountId, sessionId, conversation).catch((err) => {
+              console.error('[AccountServiceImpl] Summarization failed:', err);
+            });
+            // Use truncated version immediately for this request
+            contextToInject = this.truncateToRecent(conversation, SUMMARY_DEFAULTS.THRESHOLD_CHARS);
+          }
+
+          sessionData = this.createSyntheticSession(CONTEXT_PREFIX + contextToInject);
+        } else {
+          return { error: '', accountId, sessionData: '', credits: totalCredits };
+        }
+      } else if (conversation.length > 0) {
+        // Session exists, inject conversation into it
         let contextToInject = conversation;
 
         if (conversation.length > SUMMARY_DEFAULTS.THRESHOLD_CHARS) {
@@ -113,6 +129,20 @@ export class AccountServiceImpl implements IAccountService {
     return truncated;
   }
 
+  private createSyntheticSession(instructions: string): string {
+    // Create minimal session.update with conversation already injected
+    const syntheticSession = {
+      type: 'session.update',
+      session: {
+        type: 'realtime',
+        model: 'gpt-realtime',
+        output_modalities: ['audio'],
+        instructions,
+      },
+    };
+    return JSON.stringify(syntheticSession);
+  }
+
   private injectIntoInstructions(sessionData: string, context: string): string {
     const escapedContext = context
       .replace(/\\/g, '\\\\')
@@ -145,5 +175,63 @@ export class AccountServiceImpl implements IAccountService {
       return 0;
     }
     return credits.tokenRemaining + credits.topupRemaining;
+  }
+
+  private removeNullFields(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.removeNullFields(item));
+    }
+
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (obj[key] !== null) {
+          cleaned[key] = this.removeNullFields(obj[key]);
+        }
+      }
+      return cleaned;
+    }
+
+    return obj;
+  }
+
+  saveSession(accountId: string, sessionId: string, sessionData: string): void {
+    try {
+      // Parse the session.updated event from OpenAI
+      const event = JSON.parse(sessionData);
+
+      if (event.type === 'session.updated' && event.session) {
+        // Strip server-generated fields that cannot be sent in session.update
+        const { object, id, expires_at, ...clientSession } = event.session;
+
+        // Remove null fields (OpenAI doesn't accept null, fields must be omitted)
+        const cleanedSession = this.removeNullFields(clientSession);
+
+        // Transform to session.update for replay
+        const transformedEvent = {
+          type: 'session.update',
+          session: cleanedSession,
+        };
+
+        const cleanedSessionData = JSON.stringify(transformedEvent);
+        this.repo.upsertSession(accountId, sessionId, cleanedSessionData).catch((err) => {
+          console.error('[AccountServiceImpl] Failed to save session:', err);
+        });
+      } else {
+        console.error('[AccountServiceImpl] Invalid session data format:', sessionData.substring(0, 100));
+      }
+    } catch (err) {
+      console.error('[AccountServiceImpl] Failed to parse session data:', err);
+    }
+  }
+
+  appendConversation(accountId: string, sessionId: string, conversationData: string): void {
+    this.repo.appendConversation(accountId, sessionId, conversationData).catch((err) => {
+      console.error('[AccountServiceImpl] Failed to append conversation:', err);
+    });
   }
 }

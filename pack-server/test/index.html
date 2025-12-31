@@ -1512,21 +1512,32 @@
                     
                     // Send appropriate session configuration based on API style
                     if (currentApiStyle === 'OPENAI') {
-                        // OpenAI session.update message
+                        // COMMENTED OUT: Let server send session.update with conversation history
+                        // Client sending this would overwrite the server's session that has conversation context injected
+                        /*
                         const sessionUpdateMessage = {
                             type: "session.update",
                             session: {
-                                modalities: ["text", "audio"],
-                                turn_detection: { type: "server_vad", "silence_duration_ms": 700 },
-                                voice: "ash",
-                                input_audio_transcription: { model: "whisper-1", language: 'en' },
-                                input_audio_format: "pcm16",
-                                output_audio_format: "pcm16",
-                                instructions: "Talk to user"
+                                type: "realtime",
+                                output_modalities: ["audio"],
+                                instructions: "Talk to user",
+                                audio: {
+                                    input: {
+                                        format: { type: "audio/pcm", rate: 24000 },
+                                        transcription: { model: "whisper-1" },
+                                        turn_detection: { type: "server_vad", silence_duration_ms: 700 }
+                                    },
+                                    output: {
+                                        format: { type: "audio/pcm", rate: 24000 },
+                                        voice: "ash"
+                                    }
+                                }
                             }
                         };
                         console.log('Sending OpenAI session.update:', sessionUpdateMessage);
                         ws.send(JSON.stringify(sessionUpdateMessage));
+                        */
+                        console.log('Skipping client session.update - server will send session with conversation history');
                     } else {
                         // Gemini setup message
                         const setupMessage = {
