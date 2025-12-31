@@ -38,7 +38,7 @@ export class FileLoggerHandler implements IConnectionHandler {
 
   onMsgReceived(message: unknown): void {
     console.log('[FileLoggerHandler] Message:', JSON.stringify(message).substring(0, 200));
-    // Parse string messages to JSON objects for easier assertion
+    
     const parsed = typeof message === 'string' ? JSON.parse(message) : message;
     this.messages.push(parsed);
   }

@@ -1,4 +1,4 @@
-// Shared IUsageRepo interface - used by both pack-server (ZMQ client) and pack-db (SQLite impl)
+
 
 export interface UsageMetrics {
   accountId: string;
@@ -16,6 +16,6 @@ export interface InsertUsageResult {
 }
 
 export interface IUsageRepo {
-  // Insert usage metrics (fire-and-forget from pack-server perspective)
+  
   insertUsage(metrics: UsageMetrics): Promise<InsertUsageResult>;
 }

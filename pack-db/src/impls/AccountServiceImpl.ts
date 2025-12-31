@@ -1,32 +1,39 @@
-import { IAccountService, SessionData } from 'pack-shared';
+import { IAccountService, SessionData, ErrorCode, Logger } from 'pack-shared';
 import { ILLMService } from '../interfaces/ILLMService';
-import { SQLiteAccountRepo } from './SQLiteAccountRepo';
+import { IUsageRepo } from '../interfaces/IUsageRepo';
+import { ISessionRepo } from '../interfaces/ISessionRepo';
+import { IAccountRepo } from '../interfaces/IAccountRepo';
 import { buildSummaryPrompt, SUMMARY_DEFAULTS } from './prompts/SummaryPrompt';
 
+const CLASS_NAME = 'AccountServiceImpl';
 const CONTEXT_PREFIX = '\n\nHere is the previous conversation that happened which should be continued now:\n';
 
 export class AccountServiceImpl implements IAccountService {
-  private repo: SQLiteAccountRepo;
+  private accountRepo: IAccountRepo;
+  private sessionRepo: ISessionRepo;
+  private usageRepo: IUsageRepo;
   private llmService: ILLMService;
 
-  constructor(repo: SQLiteAccountRepo, llmService: ILLMService) {
-    this.repo = repo;
+  constructor(accountRepo: IAccountRepo, sessionRepo: ISessionRepo, usageRepo: IUsageRepo, llmService: ILLMService) {
+    this.accountRepo = accountRepo;
+    this.sessionRepo = sessionRepo;
+    this.usageRepo = usageRepo;
     this.llmService = llmService;
   }
 
   async validateAndLoad(apiKey: string, sessionId: string): Promise<SessionData> {
     try {
-      const rows = await this.repo.loadSessionByKeyAndId(apiKey, sessionId);
+      const rows = await this.sessionRepo.loadSessionByKeyAndId(apiKey, sessionId);
 
       if (rows.length === 0) {
-        return { error: 'INVALID_AUTH', accountId: '', sessionData: '', credits: 0 };
+        return { error: ErrorCode.EXTERNAL_INVALID_AUTH, accountId: '', sessionData: '', credits: 0 };
       }
 
       const accountId = rows[0].account_id;
       const totalCredits = rows[0].token_remaining + rows[0].topup_remaining;
 
       if (totalCredits <= 0) {
-        return { error: 'NO_CREDITS', accountId, sessionData: '', credits: totalCredits };
+        return { error: ErrorCode.EXTERNAL_NO_CREDITS, accountId, sessionData: '', credits: totalCredits };
       }
 
       let sessionData = '';
@@ -41,17 +48,17 @@ export class AccountServiceImpl implements IAccountService {
       }
 
       if (!sessionData) {
-        // If conversation exists, create synthetic session with conversation injected
+
         if (conversation.length > 0) {
-          console.log(`[AccountServiceImpl] No session found but conversation exists (${conversation.length} chars), creating synthetic session`);
+          Logger.debug(CLASS_NAME, accountId, 'No session found but conversation exists ({} chars), creating synthetic session', conversation.length);
 
           let contextToInject = conversation;
           if (conversation.length > SUMMARY_DEFAULTS.THRESHOLD_CHARS) {
-            // Fire and forget - trigger summarization in background
+
             this.triggerSummarization(accountId, sessionId, conversation).catch((err) => {
-              console.error('[AccountServiceImpl] Summarization failed:', err);
+              Logger.error(CLASS_NAME, accountId, 'Summarization failed', err);
             });
-            // Use truncated version immediately for this request
+
             contextToInject = this.truncateToRecent(conversation, SUMMARY_DEFAULTS.THRESHOLD_CHARS);
           }
 
@@ -60,15 +67,15 @@ export class AccountServiceImpl implements IAccountService {
           return { error: '', accountId, sessionData: '', credits: totalCredits };
         }
       } else if (conversation.length > 0) {
-        // Session exists, inject conversation into it
+
         let contextToInject = conversation;
 
         if (conversation.length > SUMMARY_DEFAULTS.THRESHOLD_CHARS) {
-          // Fire and forget - trigger summarization in background
+
           this.triggerSummarization(accountId, sessionId, conversation).catch((err) => {
-            console.error('[AccountServiceImpl] Summarization failed:', err);
+            Logger.error(CLASS_NAME, accountId, 'Summarization failed', err);
           });
-          // Use truncated version immediately for this request
+
           contextToInject = this.truncateToRecent(conversation, SUMMARY_DEFAULTS.THRESHOLD_CHARS);
         }
 
@@ -77,7 +84,7 @@ export class AccountServiceImpl implements IAccountService {
 
       return { error: '', accountId, sessionData, credits: totalCredits };
     } catch (error) {
-      console.error('[AccountServiceImpl] Error in validateAndLoad:', error);
+      Logger.error(CLASS_NAME, null, 'Error in validateAndLoad', error as Error);
       return { error: 'INTERNAL_ERROR', accountId: '', sessionData: '', credits: 0 };
     }
   }
@@ -87,9 +94,7 @@ export class AccountServiceImpl implements IAccountService {
     sessionId: string,
     conversation: string
   ): Promise<void> {
-    console.log(
-      `[AccountServiceImpl] Starting summarization for ${accountId}:${sessionId} (${conversation.length} chars)`
-    );
+    Logger.debug(CLASS_NAME, accountId, 'Starting summarization for {}:{} ({} chars)', accountId, sessionId, conversation.length);
 
     const prompt = buildSummaryPrompt(
       conversation,
@@ -108,13 +113,11 @@ export class AccountServiceImpl implements IAccountService {
     }
 
     const summary = response.content;
-    console.log(
-      `[AccountServiceImpl] Summarization complete: ${conversation.length} -> ${summary.length} chars`
-    );
+    Logger.debug(CLASS_NAME, accountId, 'Summarization complete: {} -> {} chars', conversation.length, summary.length);
 
-    // Overwrite the CONV row with the summarized content (async, non-blocking to response flow)
-    await this.repo.overwriteConversation(accountId, sessionId, summary);
-    console.log(`[AccountServiceImpl] CONV row overwritten for ${accountId}:${sessionId}`);
+
+    await this.sessionRepo.overwriteConversation(accountId, sessionId, summary);
+    Logger.debug(CLASS_NAME, accountId, 'CONV row overwritten for {}:{}', accountId, sessionId);
   }
 
   private truncateToRecent(content: string, maxChars: number): string {
@@ -130,7 +133,7 @@ export class AccountServiceImpl implements IAccountService {
   }
 
   private createSyntheticSession(instructions: string): string {
-    // Create minimal session.update with conversation already injected
+    
     const syntheticSession = {
       type: 'session.update',
       session: {
@@ -163,14 +166,15 @@ export class AccountServiceImpl implements IAccountService {
     return sessionData;
   }
 
-  updateUsage(accountId: string, sessionId: string, provider: string, inputTokens: number, outputTokens: number): void {
-    this.repo.insertUsage(accountId, sessionId, provider, inputTokens, outputTokens).catch((err) => {
-      console.error('[AccountServiceImpl] Failed to insert usage:', err);
+  updateUsage(accountId: string, sessionId: string, provider: string, inputTokens: number,
+    outputTokens: number): void {
+    this.usageRepo.insertUsage(accountId, sessionId, provider, inputTokens, outputTokens).catch((err) => {
+      Logger.error(CLASS_NAME, accountId, 'Failed to insert usage', err);
     });
   }
 
   async getCredits(accountId: string): Promise<number> {
-    const credits = await this.repo.getCredits(accountId);
+    const credits = await this.accountRepo.getCredits(accountId);
     if (!credits) {
       return 0;
     }
@@ -211,27 +215,27 @@ export class AccountServiceImpl implements IAccountService {
         // Remove null fields (OpenAI doesn't accept null, fields must be omitted)
         const cleanedSession = this.removeNullFields(clientSession);
 
-        // Transform to session.update for replay
+
         const transformedEvent = {
           type: 'session.update',
           session: cleanedSession,
         };
 
         const cleanedSessionData = JSON.stringify(transformedEvent);
-        this.repo.upsertSession(accountId, sessionId, cleanedSessionData).catch((err) => {
-          console.error('[AccountServiceImpl] Failed to save session:', err);
+        this.sessionRepo.upsertSession(accountId, sessionId, cleanedSessionData).catch((err) => {
+          Logger.error(CLASS_NAME, accountId, 'Failed to save session', err);
         });
       } else {
-        console.error('[AccountServiceImpl] Invalid session data format:', sessionData.substring(0, 100));
+        Logger.error(CLASS_NAME, accountId, 'Invalid session data format: {}', new Error('Invalid format'), sessionData.substring(0, 100));
       }
     } catch (err) {
-      console.error('[AccountServiceImpl] Failed to parse session data:', err);
+      Logger.error(CLASS_NAME, accountId, 'Failed to parse session data', err as Error);
     }
   }
 
   appendConversation(accountId: string, sessionId: string, conversationData: string): void {
-    this.repo.appendConversation(accountId, sessionId, conversationData).catch((err) => {
-      console.error('[AccountServiceImpl] Failed to append conversation:', err);
+    this.sessionRepo.appendConversation(accountId, sessionId, conversationData).catch((err) => {
+      Logger.error(CLASS_NAME, accountId, 'Failed to append conversation', err);
     });
   }
 }

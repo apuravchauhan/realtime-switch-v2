@@ -2,7 +2,7 @@ import { ZMQ_DELIMITER, ZMQ_REQUEST_SCHEMA, ZmqMessageType } from './ZmqRequestS
 import { ZMQ_RESPONSE_SCHEMA, ZmqResponseData } from './ZmqResponseSchema';
 
 export class ZmqUtils {
-  // Decode request with schema validation
+  
   static decodeRequest(raw: string): {
     id: string;
     type: ZmqMessageType;
@@ -28,7 +28,7 @@ export class ZmqUtils {
     return { id, type, args };
   }
 
-  // Encode response: id|error|field1|field2|...
+  
   static encodeResponse<T extends ZmqMessageType>(
     id: string,
     _type: T,
@@ -38,7 +38,7 @@ export class ZmqUtils {
     return [id, error, ...fields.map(String)].join(ZMQ_DELIMITER);
   }
 
-  // Decode response with schema validation
+  
   static decodeResponse<T extends keyof ZmqResponseData>(
     raw: string,
     type: T

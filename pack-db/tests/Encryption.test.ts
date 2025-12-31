@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import SQLite from 'better-sqlite3-multiple-ciphers';
+import { ConfigKeys } from 'pack-shared';
 import { ServiceFactory } from '../src/impls/ServiceFactory';
-import { ConfigKeys } from '../src/impls/Config';
 import { EncryptionTestCases } from './EncryptionTestCases';
 
 const TEST_DB_PATH = path.join(__dirname, 'encryption-test.db');

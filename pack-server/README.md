@@ -20,19 +20,19 @@ pack-server/
 
 ## Classes
 
-### Config (Static Singleton)
+### Config (Static Class)
 
 Loads environment variables and provides type-safe access to configuration.
 
 ```typescript
 import { Config, ConfigKeys } from './core/Config';
 
-const config = Config.getInstance();
-const apiKey = config.get(ConfigKeys.OPENAI_API_KEY);
+const apiKey = Config.get(ConfigKeys.OPENAI_API_KEY);
+const hasGemini = Config.has(ConfigKeys.GEMINI_API_KEY);
 ```
 
 **Features:**
-- Singleton pattern
+- Fully static methods
 - Loads `.env` from repository root
 - Type-safe configuration keys via enum
 - Error handling for missing keys

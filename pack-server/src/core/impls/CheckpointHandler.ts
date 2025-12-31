@@ -33,17 +33,17 @@ export class CheckpointHandler implements ICheckpointHandler {
           delta = message.slice(start, end);
         }
       }
-    }
-
-    const agentTypeIdx = message.indexOf('"type":"response.output_audio_transcript.delta"');
-    if (agentTypeIdx !== -1) {
-      type = 'agent';
-      const deltaIdx = message.indexOf('"delta":"');
-      if (deltaIdx !== -1) {
-        const start = deltaIdx + 9;
-        const end = message.indexOf('"', start);
-        if (end !== -1) {
-          delta = message.slice(start, end);
+    } else {
+      const agentTypeIdx = message.indexOf('"type":"response.output_audio_transcript.delta"');
+      if (agentTypeIdx !== -1) {
+        type = 'agent';
+        const deltaIdx = message.indexOf('"delta":"');
+        if (deltaIdx !== -1) {
+          const start = deltaIdx + 9;
+          const end = message.indexOf('"', start);
+          if (end !== -1) {
+            delta = message.slice(start, end);
+          }
         }
       }
     }
@@ -69,13 +69,9 @@ export class CheckpointHandler implements ICheckpointHandler {
     if (this.conversationBuffer.length === 0) return;
 
     const content = this.conversationBuffer.join('');
-
-    // Reset buffer state immediately before async operation
     this.currentConvType = null;
     this.conversationBuffer = [];
     this.conversationBufferLength = 0;
-
-    // Fire-and-forget append after buffer is cleared
     this.accountService.appendConversation(this.accountId, this.sessionId, content);
   }
 }

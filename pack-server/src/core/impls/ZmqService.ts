@@ -5,12 +5,15 @@ import {
   ZmqResponseData,
   ZMQ_DELIMITER,
   ZmqUtils,
+  Logger,
+  Config,
+  ConfigKeys,
+  ErrorCode,
 } from 'pack-shared';
 
-const DEFAULT_SOCKET_PATH = 'ipc:///tmp/rs-pack-db.sock';
-const DEFAULT_TIMEOUT_MS = 5000;
+const CLASS_NAME = 'ZmqService';
 
-// Message types that expect a response
+
 type RequestResponseType = keyof ZmqResponseData;
 
 interface PendingRequest<T extends RequestResponseType> {
@@ -27,9 +30,11 @@ export class ZmqService {
   private socketPath: string;
   private timeoutMs: number;
 
-  constructor(socketPath: string = DEFAULT_SOCKET_PATH, timeoutMs: number = DEFAULT_TIMEOUT_MS) {
-    this.socketPath = socketPath;
-    this.timeoutMs = timeoutMs;
+  constructor(socketPath?: string, timeoutMs?: number) {
+    this.socketPath = socketPath ?? Config.get(ConfigKeys.ZMQ_SOCKET_PATH);
+    this.timeoutMs = timeoutMs ?? (Config.has(ConfigKeys.ZMQ_TIMEOUT_MS)
+      ? parseInt(Config.get(ConfigKeys.ZMQ_TIMEOUT_MS), 10)
+      : 5000);
     this.dealer = new zmq.Dealer();
     this.dealer.routingId = `pack-server-${process.pid}`;
     this.dealer.sendHighWaterMark = 1000;
@@ -42,7 +47,7 @@ export class ZmqService {
     await this.dealer.connect(this.socketPath);
     this.connected = true;
     this.startReceiver();
-    console.log(`[ZmqService] Connected to ${this.socketPath}`);
+    Logger.debug(CLASS_NAME, null, `Connected to ${this.socketPath}`);
   }
 
   isConnected(): boolean {
@@ -55,7 +60,7 @@ export class ZmqService {
     ...args: ZmqArgs[T]
   ): Promise<{ id: string } & ZmqResponseData[T]> {
     if (!this.connected) {
-      throw new Error('[ZmqService] Not connected');
+      throw new Error(ErrorCode.INTERNAL_ZMQ_NOT_CONNECTED);
     }
 
     const message = [id, type, ...args.map(String)].join(ZMQ_DELIMITER);
@@ -63,7 +68,7 @@ export class ZmqService {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new Error(`[ZmqService] Request timeout: ${type}`));
+        reject(new Error(ErrorCode.INTERNAL_ZMQ_REQUEST_TIMEOUT));
       }, this.timeoutMs);
 
       this.pendingRequests.set(id, { type, resolve, reject, timer } as PendingRequest<RequestResponseType>);
@@ -76,34 +81,34 @@ export class ZmqService {
     });
   }
 
-  // Fire and forget - no response expected
+  
   sendFireAndForget<T extends ZmqMessageType>(
     id: string,
     type: T,
     ...args: ZmqArgs[T]
   ): void {
     if (!this.connected) {
-      console.error('[ZmqService] Not connected, dropping fire-and-forget message:', type);
+      Logger.error(CLASS_NAME, null, `Not connected, dropping fire-and-forget message: ${type}`, new Error(ErrorCode.INTERNAL_ZMQ_NOT_CONNECTED));
       return;
     }
 
     const message = [id, type, ...args.map(String)].join(ZMQ_DELIMITER);
     this.dealer.send(['', message]).catch((err) => {
-      console.error('[ZmqService] Fire-and-forget send error:', err);
+      Logger.error(CLASS_NAME, null, 'Fire-and-forget send error', err);
     });
   }
 
   destroy(): void {
     for (const [id, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
-      pending.reject(new Error('ZmqService destroyed'));
+      pending.reject(new Error(ErrorCode.INTERNAL_ZMQ_DESTROYED));
     }
     this.pendingRequests.clear();
 
     if (this.connected) {
       this.dealer.close();
       this.connected = false;
-      console.log('[ZmqService] Destroyed');
+      Logger.debug(CLASS_NAME, null, 'Destroyed');
     }
   }
 
@@ -112,10 +117,10 @@ export class ZmqService {
       for await (const [delimiter, msgBuffer] of this.dealer) {
         const rawString = msgBuffer.toString();
 
-        // Extract id from first part to find pending request
+
         const firstDelim = rawString.indexOf(ZMQ_DELIMITER);
         if (firstDelim === -1) {
-          console.error('[ZmqService] Invalid response format:', rawString.slice(0, 100));
+          Logger.error(CLASS_NAME, null, 'Invalid response format', new Error(ErrorCode.INTERNAL_ZMQ_INVALID_RESPONSE), rawString.slice(0, 100));
           continue;
         }
 
@@ -123,13 +128,13 @@ export class ZmqService {
         const pending = this.pendingRequests.get(id);
 
         if (!pending) {
-          console.error('[ZmqService] No pending request for id:', id);
+          Logger.error(CLASS_NAME, null, 'No pending request for id', new Error(ErrorCode.INTERNAL_ZMQ_NO_PENDING_REQUEST), id);
           continue;
         }
 
         const response = ZmqUtils.decodeResponse(rawString, pending.type);
         if (!response) {
-          console.error('[ZmqService] Failed to decode response:', rawString.slice(0, 100));
+          Logger.error(CLASS_NAME, null, 'Failed to decode response', new Error(ErrorCode.INTERNAL_ZMQ_DECODE_FAILED), rawString.slice(0, 100));
           continue;
         }
 
@@ -139,7 +144,7 @@ export class ZmqService {
       }
     } catch (error) {
       if (this.connected) {
-        console.error('[ZmqService] Receiver error:', error);
+        Logger.error(CLASS_NAME, null, 'Receiver error', error as Error);
       }
     }
   }

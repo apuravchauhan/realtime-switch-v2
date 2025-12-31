@@ -1,18 +1,19 @@
 import WebSocket from 'ws';
-import { Config, ConfigKeys } from './core/impls/Config';
+import { Config, ConfigKeys } from 'pack-shared';
 import { IConnectionHandler } from './core/interfaces/IConnectionHandler';
 import { IVoiceConnection } from './core/interfaces/IVoiceConnection';
 
 export class OpenAIConnection implements IVoiceConnection {
   private ws: WebSocket | null = null;
   private readonly url = 'wss://api.openai.com/v1/realtime?model=gpt-realtime';
-  private handler: IConnectionHandler | null = null;
-  private isConnectionEstablished = false;
+  private handler: IConnectionHandler;
 
-  public connect(handler: IConnectionHandler): void {
+  constructor(handler: IConnectionHandler) {
     this.handler = handler;
+  }
 
-    const apiKey = Config.getInstance().get(ConfigKeys.OPENAI_API_KEY);
+  public connect(): void {
+    const apiKey = Config.get(ConfigKeys.OPENAI_API_KEY);
 
     this.ws = new WebSocket(this.url, {
       headers: {
@@ -21,22 +22,20 @@ export class OpenAIConnection implements IVoiceConnection {
     });
 
     this.ws.on('open', () => {
-      this.isConnectionEstablished = true;
-      this.handler?.onConnect();
+      this.handler.onConnect();
     });
 
     this.ws.on('error', (error) => {
-      this.handler?.onError(error);
+      this.handler.onError(error);
     });
 
     this.ws.on('close', (code, reason) => {
-      this.isConnectionEstablished = false;
-      this.handler?.onClose(code, reason.toString());
+      this.handler.onClose(code, reason.toString());
       this.ws = null;
     });
 
     this.ws.on('message', (data) => {
-      this.handler?.onMsgReceived(data.toString());
+      this.handler.onMsgReceived(data.toString());
     });
   }
 
@@ -44,7 +43,6 @@ export class OpenAIConnection implements IVoiceConnection {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
-    this.handler = null;
   }
 
   public isConnected(): boolean {

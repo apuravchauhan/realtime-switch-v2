@@ -1,4 +1,4 @@
-// Shared IAccountRepo interface - used by both pack-server (ZMQ client) and pack-db (SQLite impl)
+
 
 export interface Account {
   id: string;

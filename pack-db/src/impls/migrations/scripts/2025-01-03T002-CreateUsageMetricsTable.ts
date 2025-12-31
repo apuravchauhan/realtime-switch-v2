@@ -8,8 +8,8 @@ export async function up(db: Kysely<any>): Promise<MigrationStatus> {
     return 'skipped';
   }
 
-  // Usage metrics table - tracks token usage per session
-  // Matches prod schema from realtime-switch-db
+  
+  
   await sql`
     CREATE TABLE usage_metrics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,7 +23,7 @@ export async function up(db: Kysely<any>): Promise<MigrationStatus> {
     )
   `.execute(db);
 
-  // Indexes for querying usage data
+  
   await db.schema.createIndex('idx_usage_account')
     .on('usage_metrics')
     .column('account_id')

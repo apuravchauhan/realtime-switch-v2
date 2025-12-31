@@ -1,5 +1,5 @@
-// SessionData matches ZmqResponseData[VALIDATE_AND_LOAD]
-// error: empty string = success, non-empty = error message
+
+
 export interface SessionData {
   error: string;
   accountId: string;

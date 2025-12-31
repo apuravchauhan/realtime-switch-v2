@@ -1,4 +1,4 @@
-// Shared ISessionRepo interface - used by both pack-server (ZMQ client) and pack-db (SQLite impl)
+
 
 export enum SessionType {
   SESSION = 'SESSION',
@@ -9,7 +9,7 @@ export interface Session {
   session_id: string;
   account_id: string;
   type: SessionType;
-  data: string;  // JSON blob
+  data: string;  
   created_at: string;
 }
 
@@ -41,16 +41,16 @@ export interface SessionWithConversation {
 }
 
 export interface ISessionRepo {
-  // Load session data with conversation history
+  
   loadSession(accountId: string, sessionId: string): Promise<SessionWithConversation>;
 
-  // Save/update session config (upsert)
+  
   saveSession(accountId: string, sessionId: string, data: SessionData): Promise<void>;
 
-  // Append a conversation message
+  
   appendConversation(accountId: string, sessionId: string, message: ConversationMessage): Promise<void>;
 
-  // Update token usage
+  
   updateUsage(accountId: string, sessionId: string, tokens: TokenUsage): Promise<void>;
 }
 

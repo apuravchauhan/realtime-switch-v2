@@ -4,8 +4,10 @@ import {
   ZMQ_FIRE_AND_FORGET,
   IAccountService,
   ZmqUtils,
+  Logger,
 } from 'pack-shared';
 
+const CLASS_NAME = 'ZmqHandler';
 const DEFAULT_SOCKET_PATH = 'ipc:///tmp/rs-pack-db.sock';
 
 export class ZmqHandler {
@@ -23,7 +25,7 @@ export class ZmqHandler {
   async start(socketPath: string = DEFAULT_SOCKET_PATH): Promise<void> {
     await this.router.bind(socketPath);
     this.running = true;
-    console.log(`[ZmqHandler] Listening on ${socketPath}`);
+    Logger.debug(CLASS_NAME, null, 'Listening on {}', socketPath);
     this.listen();
   }
 
@@ -34,7 +36,7 @@ export class ZmqHandler {
         this.handleMessage(identity, delimiter, msgBuffer.toString());
       }
     } catch (error) {
-      if (this.running) console.error('[ZmqHandler] Listen error:', error);
+      if (this.running) Logger.error(CLASS_NAME, null, 'Listen error', error as Error);
     }
   }
 
@@ -42,28 +44,28 @@ export class ZmqHandler {
     const request = ZmqUtils.decodeRequest(rawString);
 
     if (!request) {
-      console.error('[ZmqHandler] Failed to decode request:', rawString.slice(0, 100));
+      Logger.error(CLASS_NAME, null, 'Failed to decode request: {}', new Error('Decode failed'), rawString.slice(0, 100));
       return;
     }
 
     const { id, type, args } = request;
 
-    // Fire-and-forget: process without sending response
+
     if (ZMQ_FIRE_AND_FORGET.has(type)) {
       try {
         await this.processFireAndForget(type, args);
       } catch (error) {
-        console.error('[ZmqHandler] Fire-and-forget error:', type, error);
+        Logger.error(CLASS_NAME, null, 'Fire-and-forget error: {}', error as Error, type);
       }
       return;
     }
 
-    // Request-response: process and send response
+
     try {
       const response = await this.processRequest(id, type, args);
       await this.router.send([identity, delimiter, response]);
     } catch (error) {
-      console.error('[ZmqHandler] Error processing:', type, error);
+      Logger.error(CLASS_NAME, null, 'Error processing: {}', error as Error, type);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await this.router.send([identity, delimiter, ZmqUtils.encodeResponse(id, type, errorMsg)]);
     }
@@ -104,7 +106,7 @@ export class ZmqHandler {
         break;
       }
       default:
-        console.error('[ZmqHandler] Unknown fire-and-forget type:', type);
+        Logger.error(CLASS_NAME, null, 'Unknown fire-and-forget type: {}', new Error('Unknown type'), type);
     }
   }
 
@@ -132,6 +134,6 @@ export class ZmqHandler {
   async stop(): Promise<void> {
     this.running = false;
     this.router.close();
-    console.log('[ZmqHandler] Stopped');
+    Logger.debug(CLASS_NAME, null, 'Stopped');
   }
 }

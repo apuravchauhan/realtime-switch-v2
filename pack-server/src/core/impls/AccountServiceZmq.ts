@@ -11,13 +11,15 @@ export class AccountServiceZmq implements IAccountService {
 
   async validateAndLoad(apiKey: string, sessionId: string): Promise<SessionData> {
     const id = randomUUID();
-    const { id: _, ...sessionData } = await this.zmqService.send(id, ZmqMessageType.VALIDATE_AND_LOAD, apiKey, sessionId);
+    const { id: _, ...sessionData } = await this.zmqService.send(id, ZmqMessageType.VALIDATE_AND_LOAD, apiKey,
+      sessionId);
     return sessionData;
   }
 
   updateUsage(accountId: string, sessionId: string, provider: string, inputTokens: number, outputTokens: number): void {
     const id = randomUUID();
-    this.zmqService.sendFireAndForget(id, ZmqMessageType.UPDATE_USAGE, accountId, sessionId, provider, inputTokens, outputTokens);
+    this.zmqService.sendFireAndForget(id, ZmqMessageType.UPDATE_USAGE, accountId, sessionId, provider, inputTokens,
+      outputTokens);
   }
 
   async getCredits(accountId: string): Promise<number> {

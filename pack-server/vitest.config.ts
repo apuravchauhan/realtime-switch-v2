@@ -6,7 +6,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
     },
-    // Run test files sequentially to avoid DB conflicts
+    
     fileParallelism: false,
   },
 });

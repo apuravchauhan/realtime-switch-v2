@@ -9,5 +9,5 @@ export interface IAccountRepo {
   getApiKeysByAccountId(accountId: string): Promise<ApiKey[]>;
   revokeApiKey(keyHash: string): Promise<boolean>;
   updateLastUsed(keyHash: string): Promise<void>;
-  appendConversation(accountId: string, sessionId: string, conversationData: string): Promise<void>;
+  getCredits(accountId: string): Promise<{ tokenRemaining: number; topupRemaining: number } | null>;
 }

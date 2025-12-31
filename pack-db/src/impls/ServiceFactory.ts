@@ -1,10 +1,13 @@
-import { IAccountService } from 'pack-shared';
+import { IAccountService, Config } from 'pack-shared';
 import { ILLMService } from '../interfaces/ILLMService';
 import { IServiceFactory } from '../interfaces/IServiceFactory';
 import { IAccountRepo } from '../interfaces/IAccountRepo';
-import { Config } from './Config';
+import { IUsageRepo } from '../interfaces/IUsageRepo';
+import { ISessionRepo } from '../interfaces/ISessionRepo';
 import { DatabaseConnection } from './DatabaseConnection';
 import { SQLiteAccountRepo } from './SQLiteAccountRepo';
+import { SQLUsageRepo } from './SQLUsageRepo';
+import { SQLSessionRepo } from './SQLSessionRepo';
 import { AccountServiceImpl } from './AccountServiceImpl';
 import { LLMServiceGemini } from './LLMServiceGemini';
 import { ZmqHandler } from './ZmqHandler';
@@ -12,9 +15,10 @@ import { Migrator } from './migrations/Migrator';
 
 export class ServiceFactory implements IServiceFactory {
   private static instance: ServiceFactory | null = null;
-  private config: Config | null = null;
   private dbConnection: DatabaseConnection | null = null;
   private accountRepo: SQLiteAccountRepo | null = null;
+  private usageRepo: SQLUsageRepo | null = null;
+  private sessionRepo: SQLSessionRepo | null = null;
   private accountService: AccountServiceImpl | null = null;
   private llmService: LLMServiceGemini | null = null;
   private zmqHandler: ZmqHandler | null = null;
@@ -36,19 +40,13 @@ export class ServiceFactory implements IServiceFactory {
     if (ServiceFactory.instance?.dbConnection) {
       ServiceFactory.instance.dbConnection.destroy();
     }
+    Config.reset();
     ServiceFactory.instance = null;
-  }
-
-  getConfig(): Config {
-    if (!this.config) {
-      this.config = new Config();
-    }
-    return this.config;
   }
 
   getDatabaseConnection(): DatabaseConnection {
     if (!this.dbConnection) {
-      this.dbConnection = new DatabaseConnection(this.getConfig());
+      this.dbConnection = new DatabaseConnection();
     }
     return this.dbConnection;
   }
@@ -67,9 +65,23 @@ export class ServiceFactory implements IServiceFactory {
     return this.accountRepo;
   }
 
+  getUsageRepo(): IUsageRepo {
+    if (!this.usageRepo) {
+      this.usageRepo = new SQLUsageRepo(this.getDatabaseConnection().getDb());
+    }
+    return this.usageRepo;
+  }
+
+  getSessionRepo(): ISessionRepo {
+    if (!this.sessionRepo) {
+      this.sessionRepo = new SQLSessionRepo(this.getDatabaseConnection().getDb());
+    }
+    return this.sessionRepo;
+  }
+
   getLLMService(): ILLMService {
     if (!this.llmService) {
-      this.llmService = new LLMServiceGemini(this.getConfig());
+      this.llmService = new LLMServiceGemini();
     }
     return this.llmService;
   }
@@ -77,7 +89,9 @@ export class ServiceFactory implements IServiceFactory {
   getAccountService(): IAccountService {
     if (!this.accountService) {
       this.accountService = new AccountServiceImpl(
-        this.getAccountRepo() as SQLiteAccountRepo,
+        this.getAccountRepo(),
+        this.getSessionRepo(),
+        this.getUsageRepo(),
         this.getLLMService()
       );
     }

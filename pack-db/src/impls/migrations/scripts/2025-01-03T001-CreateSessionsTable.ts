@@ -8,9 +8,9 @@ export async function up(db: Kysely<any>): Promise<MigrationStatus> {
     return 'skipped';
   }
 
-  // Sessions table - stores both session config and conversation messages
-  // type: 'session' for session config, 'conv' for conversation messages
-  // Composite PK: (account_id, session_id, type) - same pattern as realtime-switch-db
+  
+  
+  
   await sql`
     CREATE TABLE sessions (
       account_id TEXT NOT NULL,
@@ -22,7 +22,7 @@ export async function up(db: Kysely<any>): Promise<MigrationStatus> {
     )
   `.execute(db);
 
-  // Index for querying by created time (cleanup, sorting)
+  
   await db.schema.createIndex('sessions_created_index')
     .on('sessions')
     .column('created_at')

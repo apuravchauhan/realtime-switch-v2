@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ConfigKeys } from 'pack-shared';
 import { ServiceFactory } from '../src/impls/ServiceFactory';
-import { ConfigKeys } from '../src/impls/Config';
 import { ApiKeyTestCases } from './ApiKeyTestCases';
 
 const TEST_DB_PATH = path.join(__dirname, 'apikey-test.db');

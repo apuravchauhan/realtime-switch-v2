@@ -1,4 +1,4 @@
-// Core shared types and utilities
+
 
 export interface User {
   id: string;
@@ -10,7 +10,7 @@ export interface Config {
   endpoint: string;
 }
 
-// Shared interfaces for IPC
+
 export * from './interfaces/IAccountRepo';
 export * from './interfaces/ISessionRepo';
 export * from './interfaces/IUsageRepo';

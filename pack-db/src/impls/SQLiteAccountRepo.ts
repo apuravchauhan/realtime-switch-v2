@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash, randomBytes } from 'crypto';
 import { IAccountRepo } from '../interfaces/IAccountRepo';
@@ -7,17 +7,8 @@ import { ApiKey, CreateApiKeyInput, CreateApiKeyResult } from '../interfaces/ent
 
 const PLAN_DEFAULTS: Record<string, number> = { Free: 1000, Pro: 50000, Enterprise: 500000 };
 
-// Row returned from loadSessionByKeyAndId JOIN query
-export interface SessionRow {
-  account_id: string;
-  type: string;  // 'SESSION' or 'CONV'
-  data: string;  // JSON blob
-  token_remaining: number;
-  topup_remaining: number;
-}
-
 export class SQLiteAccountRepo implements IAccountRepo {
-  constructor(private db: Kysely<Database>) {}
+  constructor(private db: Kysely<Database>) { }
 
   async createAccount(input: CreateAccountInput): Promise<Account> {
     const now = new Date().toISOString();
@@ -97,135 +88,6 @@ export class SQLiteAccountRepo implements IAccountRepo {
       tokenRemaining: result.token_remaining,
       topupRemaining: result.topup_remaining,
     };
-  }
-
-  // Raw DB query: returns 0-2 rows based on key validity and session existence
-  // 0 rows = invalid key or expired
-  // 1 row = valid key, no session (new session) OR session exists (SESSION type only)
-  // 2 rows = valid key, session + conversation exist (SESSION + CONV types)
-  async loadSessionByKeyAndId(apiKey: string, sessionId: string): Promise<SessionRow[]> {
-    const keyHash = this.hashKey(apiKey);
-    const now = new Date().toISOString();
-
-    const rows = await sql<SessionRow>`
-      SELECT
-        a.account_id,
-        s.type,
-        s.data,
-        acc.token_remaining,
-        acc.topup_remaining
-      FROM api_keys a
-      JOIN accounts acc ON acc.id = a.account_id
-      LEFT JOIN sessions s ON s.account_id = a.account_id AND s.session_id = ${sessionId}
-      WHERE a.key_hash = ${keyHash}
-        AND (a.expires_at IS NULL OR a.expires_at > ${now})
-    `.execute(this.db);
-
-    return rows.rows;
-  }
-
-  async overwriteConversation(accountId: string, sessionId: string, content: string): Promise<void> {
-    await sql`
-      UPDATE sessions
-      SET data = ${content}
-      WHERE account_id = ${accountId}
-        AND session_id = ${sessionId}
-        AND type = 'CONV'
-    `.execute(this.db);
-  }
-
-  async upsertSession(accountId: string, sessionId: string, sessionData: string): Promise<void> {
-    const now = new Date().toISOString();
-    await sql`
-      INSERT INTO sessions (account_id, session_id, type, data, created_at)
-      VALUES (${accountId}, ${sessionId}, 'SESSION', ${sessionData}, ${now})
-      ON CONFLICT(account_id, session_id, type)
-      DO UPDATE SET data = ${sessionData}
-    `.execute(this.db);
-  }
-
-  async appendConversation(accountId: string, sessionId: string, conversationData: string): Promise<void> {
-    const now = new Date().toISOString();
-
-    // Insert or append using ON CONFLICT
-    await sql`
-      INSERT INTO sessions (account_id, session_id, type, data, created_at)
-      VALUES (${accountId}, ${sessionId}, 'CONV', ${conversationData}, ${now})
-      ON CONFLICT(account_id, session_id, type)
-      DO UPDATE SET data = data || ${conversationData}
-    `.execute(this.db);
-  }
-
-  async insertUsage(
-    accountId: string,
-    sessionId: string,
-    provider: string,
-    inputTokens: number,
-    outputTokens: number
-  ): Promise<void> {
-    const now = new Date().toISOString();
-    const totalTokens = inputTokens + outputTokens;
-
-    // Use transaction to atomically insert usage and update credits
-    await this.db.transaction().execute(async (trx) => {
-      // Get current balances
-      const account = await trx
-        .selectFrom('accounts')
-        .select(['topup_remaining', 'token_remaining'])
-        .where('id', '=', accountId)
-        .executeTakeFirst();
-
-      if (!account) {
-        throw new Error(`Account ${accountId} not found`);
-      }
-
-      let topupRemaining = account.topup_remaining;
-      let tokenRemaining = account.token_remaining;
-
-      // Cascading deduction: topup first, then subscription
-      let remainingUsage = totalTokens;
-
-      // Step 1: Deduct from topup (stops at 0)
-      if (topupRemaining > 0) {
-        if (topupRemaining >= remainingUsage) {
-          topupRemaining -= remainingUsage;
-          remainingUsage = 0;
-        } else {
-          remainingUsage -= topupRemaining;
-          topupRemaining = 0;
-        }
-      }
-
-      // Step 2: Deduct remainder from subscription (can go negative)
-      if (remainingUsage > 0) {
-        tokenRemaining -= remainingUsage;
-      }
-
-      // Insert usage record
-      await trx
-        .insertInto('usage_metrics')
-        .values({
-          account_id: accountId,
-          session_id: sessionId,
-          provider,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          total_tokens: totalTokens,
-          created_at: now,
-        })
-        .execute();
-
-      // Update account credits
-      await trx
-        .updateTable('accounts')
-        .set({
-          topup_remaining: topupRemaining,
-          token_remaining: tokenRemaining,
-          updated_at: now,
-        })
-        .where('id', '=', accountId)
-        .execute();
-    });
   }
 
   private generateKey(): string {

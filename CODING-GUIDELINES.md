@@ -1,6 +1,7 @@
 # Formatting Guidelines
-1. File Names should be InitCaps.ts (Pascalcase) like FileName.ts and not file.name.ts
-2. Max line length is 120 chars. Fill lines up to 120 chars before breaking to next line.
+
+## 1. File Names
+File names should be PascalCase: `FileName.ts` not `file.name.ts`
 
 # Coding Guidelines
 

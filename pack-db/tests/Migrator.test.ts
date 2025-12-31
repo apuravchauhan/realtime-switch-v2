@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ConfigKeys } from 'pack-shared';
 import { ServiceFactory } from '../src/impls/ServiceFactory';
-import { ConfigKeys } from '../src/impls/Config';
 import { PreconditionHelpers } from '../src/impls/migrations/PreconditionHelpers';
 import { MigratorTestCases } from './MigratorTestCases';
 

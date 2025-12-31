@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 
-// Load test environment
+
 dotenv.config({ path: path.resolve(__dirname, '../../.env.test') });
 
 describe('OpenAI Full Response Turn', () => {

@@ -1,14 +1,13 @@
 import * as uWS from 'uWebSockets.js';
-import { IAccountService } from 'pack-shared';
+import { IAccountService, SessionData, Config, ConfigKeys } from 'pack-shared';
 import { IServiceFactory } from '../interfaces/IServiceFactory';
-import { IVoiceConnection } from '../interfaces/IVoiceConnection';
 import { ICheckpointHandler } from '../interfaces/ICheckpointHandler';
+import { IUsageHandler } from '../interfaces/IUsageHandler';
 import { ZmqService } from './ZmqService';
 import { AccountServiceZmq } from './AccountServiceZmq';
 import { CheckpointHandler } from './CheckpointHandler';
-import { OpenAIConnection } from '../../OpenAIConnection';
+import { UsageHandler } from './UsageHandler';
 import { Orchestrator } from '../../Orchestrator';
-import { Config, ConfigKeys } from './Config';
 
 export class ServiceFactory implements IServiceFactory {
   private static instance: ServiceFactory | null = null;
@@ -35,11 +34,21 @@ export class ServiceFactory implements IServiceFactory {
 
   getZmqService(): ZmqService {
     if (!this.zmqService) {
-      const config = Config.getInstance();
-      const socketPath = config.has(ConfigKeys.ZMQ_SOCKET_PATH)
-        ? config.get(ConfigKeys.ZMQ_SOCKET_PATH)
-        : undefined;
-      this.zmqService = new ZmqService(socketPath);
+      let socketPath: string | undefined;
+      let timeoutMs: number | undefined;
+      try {
+        socketPath = Config.get(ConfigKeys.ZMQ_SOCKET_PATH);
+      } catch (error) {
+        // ZMQ_SOCKET_PATH is optional, will use default if not provided
+        socketPath = undefined;
+      }
+      try {
+        timeoutMs = parseInt(Config.get(ConfigKeys.ZMQ_TIMEOUT_MS), 10);
+      } catch (error) {
+        // ZMQ_TIMEOUT_MS is optional, will use default if not provided
+        timeoutMs = undefined;
+      }
+      this.zmqService = new ZmqService(socketPath, timeoutMs);
     }
     return this.zmqService;
   }
@@ -51,26 +60,20 @@ export class ServiceFactory implements IServiceFactory {
     return this.accountService;
   }
 
-  getNewVoiceConnection(): IVoiceConnection {
-    return new OpenAIConnection();
-  }
-
   getNewCheckpointHandler(accountId: string, sessionId: string): ICheckpointHandler {
     return new CheckpointHandler(accountId, sessionId, this.getAccountService());
   }
 
+  getNewUsageHandler(accountId: string, sessionId: string): IUsageHandler {
+    return new UsageHandler(accountId, sessionId, this.getAccountService());
+  }
+
   getNewOrchestrator(
-    accountId: string,
-    sessionId: string,
-    sessionData: string,
-    credits: number,
+    sessionData: SessionData,
     ws: uWS.WebSocket<unknown>
   ): Orchestrator {
     return new Orchestrator(
-      accountId,
-      sessionId,
       sessionData,
-      credits,
       ws,
       this
     );
